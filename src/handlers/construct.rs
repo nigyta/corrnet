@@ -1,10 +1,10 @@
 use anyhow::Result;
-use ndarray_stats::*;
 use std::fs::File;
 use std::io::BufWriter;
 use std::path::{Path, PathBuf};
 
 use crate::io;
+use crate::math;
 use crate::network;
 use crate::rank;
 use crate::Rank;
@@ -31,7 +31,7 @@ pub fn parse_args(
     debug!("exp_matrix: \n{:?}", arr);
 
     // calc correlation
-    let corr = arr.pearson_correlation()?;
+    let corr = math::pearson_correlation(&arr)?;
     debug!("{:?}", corr.shape());
     debug!("corr_matrix: \n{:?}", corr);
 

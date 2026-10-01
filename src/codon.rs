@@ -1,8 +1,8 @@
 use anyhow::Result;
 use ndarray::{Array2, ArrayBase};
-use ndarray_stats::*;
 use std::collections::BTreeMap;
 
+use crate::math;
 use crate::rank;
 
 fn make_codon_map() -> BTreeMap<String, usize> {
@@ -59,7 +59,7 @@ fn make_codon_arr(seqs: &[String]) -> Result<Array2<usize>> {
 
 fn make_codon_corr(seqs: &[String]) -> Result<Array2<f64>> {
     let codon_arr = make_codon_arr(seqs)?;
-    Ok(codon_arr.mapv(|x| x as f64).pearson_correlation()?)
+    math::pearson_correlation(&codon_arr.mapv(|x| x as f64))
 }
 
 pub fn make_codon_rank(seqs: &[String]) -> Result<Array2<u32>> {

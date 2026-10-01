@@ -2,7 +2,6 @@ extern crate anyhow;
 extern crate bio;
 extern crate csv;
 extern crate ndarray;
-extern crate ndarray_stats;
 extern crate num_traits;
 extern crate pretty_env_logger;
 
