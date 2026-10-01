@@ -2,7 +2,6 @@ extern crate anyhow;
 extern crate bio;
 extern crate csv;
 extern crate ndarray;
-extern crate ndarray_stats;
 extern crate num_traits;
 extern crate pretty_env_logger;
 
@@ -21,10 +20,10 @@ use anyhow::Result;
 use structopt::{clap, clap::arg_enum, StructOpt};
 
 mod codon;
-mod graph;
 mod handlers;
 mod io;
 mod math;
+mod network;
 mod rank;
 mod similarity;
 

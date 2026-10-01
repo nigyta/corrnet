@@ -1,9 +1,8 @@
 use anyhow::Result;
 use itertools::Itertools;
-use ndarray::{parallel::prelude::*, Array2, ArrayBase, Axis};
+use ndarray::{parallel::prelude::*, Array2, Axis};
 use num_traits::Float;
 use ordered_float::OrderedFloat;
-use superslice::*;
 
 pub fn hrr<T: Ord>(a: T, b: T) -> T {
     std::cmp::max(a, b)
@@ -13,61 +12,50 @@ pub fn mr<T: Float>(a: T, b: T) -> T {
     (a * b).sqrt()
 }
 
-#[allow(dead_code)]
-pub fn construct_rank_matrix(corr: &Array2<f64>, size: usize) -> Result<Array2<usize>> {
-    let mut rank_vec = vec![];
+/// Rank matrix of a correlation matrix.
+///
+/// For each row `i`, the other genes are ranked by signed correlation in
+/// descending order (rank 1 = most positively correlated), as in
+/// Obayashi & Kinoshita (2009) and Mutwil et al. (2010).
+/// The gene itself gets rank 0, so ranks range over `0..n`.
+/// Ties are broken by column index, and NaN is ranked last.
+pub fn construct_rank_matrix(corr: &Array2<f64>) -> Result<Array2<u32>> {
+    let n = corr.nrows();
+    anyhow::ensure!(n == corr.ncols(), "correlation matrix must be square");
+    anyhow::ensure!(n <= u32::MAX as usize, "too many genes");
 
-    for row in corr.outer_iter() {
-        let mut sorted_vec: Vec<OrderedFloat<f64>> = row
-            .to_vec()
-            .into_iter()
-            .map(|x| OrderedFloat::from(f64::abs(x)))
-            .collect();
-        sorted_vec.sort();
-
-        for vv in row.to_vec().iter() {
-            let rank = sorted_vec.len() - sorted_vec.lower_bound(&OrderedFloat::from(*vv)) - 1;
-            rank_vec.push(rank)
-        }
-    }
-
-    Ok(ArrayBase::from_shape_vec((size, size), rank_vec)?)
-}
-
-pub fn construct_rank_matrix_multithreading(
-    corr: &Array2<f64>,
-    size: usize,
-) -> Result<Array2<usize>> {
-    let mut rank_vec = Vec::new();
-    corr.axis_iter(Axis(0))
+    let mut rank_arr = Array2::<u32>::zeros((n, n));
+    rank_arr
+        .axis_iter_mut(Axis(0))
         .into_par_iter()
-        .map(|row| {
-            let sorted_vec = row
-                .iter()
-                .map(|x| OrderedFloat::from(x.abs()))
-                .sorted()
-                .collect_vec();
+        .enumerate()
+        .for_each(|(i, mut out)| {
+            let row = corr.row(i);
+            let key = |j: usize| {
+                let x = row[j];
+                OrderedFloat::from(if x.is_nan() { f64::NEG_INFINITY } else { x })
+            };
+            let mut order = (0..n).filter(|&j| j != i).collect_vec();
+            // stable sort keeps index order for ties
+            order.sort_by_key(|&j| std::cmp::Reverse(key(j)));
+            for (r, &j) in order.iter().enumerate() {
+                out[j] = (r + 1) as u32;
+            }
+            out[i] = 0;
+        });
 
-            row.iter()
-                .map(|x| sorted_vec.len() - sorted_vec.lower_bound(&OrderedFloat::from(*x)) - 1)
-                .collect_vec()
-        })
-        .collect_into_vec(&mut rank_vec);
-
-    let rank_vec = rank_vec.into_iter().flatten().collect_vec();
-
-    Ok(ArrayBase::from_shape_vec((size, size), rank_vec)?)
+    Ok(rank_arr)
 }
 
 pub fn get_index_sorted_by_rank(
-    rank_matrix: &Array2<usize>,
+    rank_matrix: &Array2<u32>,
     i: usize,
     index: &[String],
 ) -> Vec<String> {
     let mut rank_vec: Vec<String> = vec!["".to_string(); index.len() - 1];
 
     for j in 0..index.len() {
-        let rank = rank_matrix[[i, j]];
+        let rank = rank_matrix[[i, j]] as usize;
         if rank == 0 {
             continue;
         }
@@ -99,18 +87,45 @@ mod test {
     fn test_construct_rank_matrix_1() {
         let arr2 = array![[1.0, 0.9, 0.3], [0.9, 1.0, 0.5], [0.3, 0.5, 1.0]];
 
-        let rank: Array2<usize> = array![[0, 1, 2], [1, 0, 2], [2, 1, 0]];
+        let rank: Array2<u32> = array![[0, 1, 2], [1, 0, 2], [2, 1, 0]];
 
-        assert_eq!(construct_rank_matrix(&arr2, 3).unwrap(), rank);
-        assert_eq!(
-            construct_rank_matrix(&arr2, 3).unwrap(),
-            construct_rank_matrix_multithreading(&arr2, 3).unwrap()
-        );
+        assert_eq!(construct_rank_matrix(&arr2).unwrap(), rank);
+    }
+
+    #[test]
+    fn test_construct_rank_matrix_negative() {
+        // negative correlations rank below positive ones, regardless of magnitude
+        let arr2 = array![
+            [1.0, -0.9, 0.3, 0.1],
+            [-0.9, 1.0, 0.5, -0.2],
+            [0.3, 0.5, 1.0, 0.4],
+            [0.1, -0.2, 0.4, 1.0]
+        ];
+
+        let rank: Array2<u32> = array![[0, 3, 1, 2], [3, 0, 1, 2], [3, 1, 0, 2], [2, 3, 1, 0]];
+
+        assert_eq!(construct_rank_matrix(&arr2).unwrap(), rank);
+    }
+
+    #[test]
+    fn test_construct_rank_matrix_ties_and_self() {
+        // another gene with corr == 1.0 must not displace self from rank 0,
+        // ties are broken by index, NaN goes last
+        let arr2 = array![
+            [1.0, 1.0, f64::NAN, 0.2],
+            [1.0, 1.0, 0.2, 0.2],
+            [f64::NAN, 0.2, 1.0, 0.0],
+            [0.2, 0.2, 0.0, 1.0]
+        ];
+
+        let rank: Array2<u32> = array![[0, 1, 3, 2], [1, 0, 2, 3], [3, 1, 0, 2], [1, 2, 3, 0]];
+
+        assert_eq!(construct_rank_matrix(&arr2).unwrap(), rank);
     }
 
     #[test]
     fn test_get_index_sorted_by_rank_1() {
-        let rank: Array2<usize> = array![[0, 1, 2], [1, 0, 2], [2, 1, 0]];
+        let rank: Array2<u32> = array![[0, 1, 2], [1, 0, 2], [2, 1, 0]];
 
         let index: Vec<String> = ["gene_1", "gene_2", "gene_3"]
             .iter()

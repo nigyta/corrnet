@@ -1,8 +1,8 @@
 use anyhow::Result;
 use ndarray::{Array2, ArrayBase};
-use ndarray_stats::*;
 use std::collections::BTreeMap;
 
+use crate::math;
 use crate::rank;
 
 fn make_codon_map() -> BTreeMap<String, usize> {
@@ -28,13 +28,15 @@ fn make_codon_map() -> BTreeMap<String, usize> {
 fn make_codon_vec(seq: &str) -> Vec<usize> {
     let mut codon_map = make_codon_map();
 
-    let seq: Vec<char> = seq.to_uppercase().chars().collect();
+    let seq = seq.to_ascii_uppercase();
 
-    for i in (0..seq.len() - 3).step_by(3) {
-        let codon: String = seq[i..i + 3].iter().collect();
-        match codon_map.get_mut(&codon) {
-            Some(i) => *i += 1,
-            None => continue,
+    for codon in seq.as_bytes().chunks_exact(3) {
+        let codon = match std::str::from_utf8(codon) {
+            Ok(codon) => codon,
+            Err(_) => continue,
+        };
+        if let Some(cnt) = codon_map.get_mut(codon) {
+            *cnt += 1;
         }
     }
 
@@ -57,12 +59,12 @@ fn make_codon_arr(seqs: &[String]) -> Result<Array2<usize>> {
 
 fn make_codon_corr(seqs: &[String]) -> Result<Array2<f64>> {
     let codon_arr = make_codon_arr(seqs)?;
-    Ok(codon_arr.mapv(|x| x as f64).pearson_correlation()?)
+    math::pearson_correlation(&codon_arr.mapv(|x| x as f64))
 }
 
-pub fn make_codon_rank(seqs: &[String]) -> Result<Array2<usize>> {
+pub fn make_codon_rank(seqs: &[String]) -> Result<Array2<u32>> {
     let codon_corr = make_codon_corr(seqs)?;
-    rank::construct_rank_matrix_multithreading(&codon_corr, seqs.len())
+    rank::construct_rank_matrix(&codon_corr)
 }
 
 #[cfg(test)]
@@ -97,5 +99,25 @@ mod test {
                 assert_eq!(codon_vec[i], 0)
             }
         }
+    }
+
+    #[test]
+    fn test_make_codon_vec_last_codon_and_short_seq() {
+        let codon_map = make_codon_map();
+        let pos = |c: &str| codon_map.keys().position(|k| k == c).unwrap();
+
+        // the last codon is counted
+        let codon_vec = make_codon_vec("ATGCCC");
+        assert_eq!(codon_vec[pos("ATG")], 1);
+        assert_eq!(codon_vec[pos("CCC")], 1);
+
+        // lowercase input and a trailing partial codon
+        let codon_vec = make_codon_vec("atgcc");
+        assert_eq!(codon_vec[pos("ATG")], 1);
+        assert_eq!(codon_vec.iter().sum::<usize>(), 1);
+
+        // sequences shorter than one codon do not panic
+        assert_eq!(make_codon_vec("AT").iter().sum::<usize>(), 0);
+        assert_eq!(make_codon_vec("").iter().sum::<usize>(), 0);
     }
 }
