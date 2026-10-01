@@ -34,17 +34,10 @@ pub fn parse_args(
     let corr = arr.pearson_correlation()?;
     debug!("{:?}", corr.shape());
     debug!("corr_matrix: \n{:?}", corr);
-    debug!(
-        "corr[0, 4]: {} {} : {:?}",
-        &index[0],
-        &index[4],
-        corr[[0, 4]]
-    );
 
     // calc rank matrix
     info!("calculate rank matrix...");
-    let array_size = index.len();
-    let rank_arr: Array2<usize> = rank::construct_rank_matrix_multithreading(&corr, array_size)?;
+    let rank_arr: Array2<usize> = rank::construct_rank_matrix(&corr)?;
     // construct hrr based network
     info!("construct rank based network...");
 

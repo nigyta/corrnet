@@ -3,7 +3,7 @@ use csv::Reader;
 use itertools::Itertools;
 use ordered_float::OrderedFloat;
 use rayon::prelude::*;
-use std::sync::{Arc, Mutex};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::{collections::HashMap, path::Path};
 
 use crate::codon;
@@ -50,41 +50,47 @@ pub fn parse_args(input_graph: &Path, input_fasta: &Path, percent: &f64) -> Resu
     );
     info!("This tool calculate top_k as {}", k);
 
-    info!("start calculate cosmix score...");
+    info!("start calculate coxsim score...");
 
-    // calc cosmix values
-    let tmap = Arc::new(Mutex::new(map));
-    let cosmix_values: Vec<f64> = (0..index.len())
+    // sort neighbours of each gene by rank once, then share the map read-only
+    let map: HashMap<String, Vec<String>> = map
         .into_par_iter()
-        .filter_map(|i| {
-            let m = Arc::clone(&tmap);
-            if let Some(corr_ranked) = m.lock().unwrap().get_mut(&index[i]) {
-                corr_ranked.sort_by(|a, b| a.1.cmp(&b.1));
-                let corr_ranked_vec = corr_ranked.iter().map(|x| x.0.to_owned()).collect_vec();
-                let codon_ranked_vec: Vec<String> =
-                    rank::get_index_sorted_by_rank(&codon_rank, i, &index);
-
-                return Some(similarity::cosmix(&corr_ranked_vec, &codon_ranked_vec, k));
-            }
-            None
+        .map(|(gene, mut neighbours)| {
+            neighbours.sort_by_key(|x| x.1);
+            (gene, neighbours.into_iter().map(|x| x.0).collect_vec())
         })
         .collect();
 
-    // for i in 0..index.len() {
-    //     // let gene_id = index[i]
-    //     let corr_ranked_vec: Vec<String> = match sort_corr_by_rank(&mut map, &index[i]) {
-    //         Some(v) => v,
-    //         None => continue,
-    //     };
-    //     let codon_ranked_vec: Vec<String> = rank::get_index_sorted_by_rank(&codon_rank, i, &index);
+    // genes with fewer than k neighbours in the graph (e.g. after a rank cutoff) cannot be scored
+    let skipped = AtomicUsize::new(0);
+    let coxsim_values: Vec<f64> = (0..index.len())
+        .into_par_iter()
+        .filter_map(|i| {
+            let corr_ranked_vec = map.get(&index[i])?;
+            if corr_ranked_vec.len() < k {
+                skipped.fetch_add(1, Ordering::Relaxed);
+                return None;
+            }
+            let codon_ranked_vec: Vec<String> =
+                rank::get_index_sorted_by_rank(&codon_rank, i, &index);
 
-    //     cosmix_values.push(similarity::cosmix(&corr_ranked_vec, &codon_ranked_vec, k));
-    // }
+            Some(similarity::coxsim(corr_ranked_vec, &codon_ranked_vec, k))
+        })
+        .collect();
+
+    let skipped = skipped.into_inner();
+    if skipped > 0 {
+        warn!(
+            "{} genes have fewer than k = {} neighbours in the graph and were skipped",
+            skipped, k
+        );
+    }
+    anyhow::ensure!(!coxsim_values.is_empty(), "no gene could be scored");
 
     info!("caluculation is done!");
 
-    // print median of cosmix values
-    println!("Codon Score: {}", math::median(&cosmix_values));
+    // print median of coxsim values
+    println!("Codon Score: {}", math::median(&coxsim_values));
 
     Ok(())
 }

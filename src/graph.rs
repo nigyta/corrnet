@@ -163,7 +163,7 @@ where
                     continue;
                 }
                 if let Some(pcc_cutoff) = pcc_cutoff {
-                    if f64::abs(corr[[i, j]]) < *pcc_cutoff {
+                    if corr[[i, j]] < *pcc_cutoff {
                         continue;
                     }
                 }
@@ -199,7 +199,7 @@ where
                 }
                 // construct network with rank::mr
                 if let Some(pcc_cutoff) = pcc_cutoff {
-                    if f64::abs(corr[[i, j]]) < *pcc_cutoff {
+                    if corr[[i, j]] < *pcc_cutoff {
                         continue;
                     }
                 }
