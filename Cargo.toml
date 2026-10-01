@@ -24,6 +24,8 @@ serde_derive = "1"
 num-traits = "*"
 polars = {version = "0.17.0", features = ["ndarray", "decompress"]}
 rayon = "1.5.1"
+ryu = "1"
+itoa = "0.4"
 
 [dev-dependencies]
 maplit = "1.0"

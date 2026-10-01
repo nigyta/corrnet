@@ -21,10 +21,10 @@ use anyhow::Result;
 use structopt::{clap, clap::arg_enum, StructOpt};
 
 mod codon;
-mod graph;
 mod handlers;
 mod io;
 mod math;
+mod network;
 mod rank;
 mod similarity;
 

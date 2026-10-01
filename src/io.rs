@@ -1,18 +1,13 @@
 use std::collections::HashSet;
 use std::io::{BufRead, BufReader};
-use std::{
-    fmt::{Debug, Display},
-    path::Path,
-    str::FromStr,
-};
+use std::{fmt::Debug, path::Path, str::FromStr};
 
 use flate2::read::MultiGzDecoder;
 
 use anyhow::Result;
-use csv::{Reader, Writer};
+use csv::Reader;
 use ndarray::{Array2, ArrayBase};
 
-use crate::graph;
 use crate::math;
 
 pub fn read_exp_csv<P: AsRef<Path>>(input: P, index: &mut Vec<String>) -> Result<Array2<f64>> {
@@ -93,15 +88,6 @@ pub struct CsvRecord {
 }
 
 impl CsvRecord {
-    pub fn new(gene_1: String, gene_2: String, corr: f64, rank: String) -> Self {
-        Self {
-            gene_1,
-            gene_2,
-            corr,
-            rank,
-        }
-    }
-
     pub fn genes(&self) -> (String, String) {
         (self.gene_1.clone(), self.gene_2.clone())
     }
@@ -175,20 +161,4 @@ impl ByteCsvRecord<'_> {
     pub fn rank(&self) -> f64 {
         self.rank
     }
-}
-
-pub fn graph_to_csv<P, T>(outpath: P, graph: graph::Graph<T>) -> Result<()>
-where
-    P: AsRef<Path>,
-    T: Copy + Clone + Display + PartialOrd + PartialEq + FromStr,
-{
-    let mut wtr = Writer::from_path(outpath.as_ref())?;
-
-    for edge in graph.edges().iter() {
-        wtr.serialize(edge.to_record(graph.nodes()))?;
-    }
-
-    wtr.flush()?;
-
-    Ok(())
 }

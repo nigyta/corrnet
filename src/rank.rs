@@ -19,11 +19,12 @@ pub fn mr<T: Float>(a: T, b: T) -> T {
 /// Obayashi & Kinoshita (2009) and Mutwil et al. (2010).
 /// The gene itself gets rank 0, so ranks range over `0..n`.
 /// Ties are broken by column index, and NaN is ranked last.
-pub fn construct_rank_matrix(corr: &Array2<f64>) -> Result<Array2<usize>> {
+pub fn construct_rank_matrix(corr: &Array2<f64>) -> Result<Array2<u32>> {
     let n = corr.nrows();
     anyhow::ensure!(n == corr.ncols(), "correlation matrix must be square");
+    anyhow::ensure!(n <= u32::MAX as usize, "too many genes");
 
-    let mut rank_arr = Array2::<usize>::zeros((n, n));
+    let mut rank_arr = Array2::<u32>::zeros((n, n));
     rank_arr
         .axis_iter_mut(Axis(0))
         .into_par_iter()
@@ -38,7 +39,7 @@ pub fn construct_rank_matrix(corr: &Array2<f64>) -> Result<Array2<usize>> {
             // stable sort keeps index order for ties
             order.sort_by_key(|&j| std::cmp::Reverse(key(j)));
             for (r, &j) in order.iter().enumerate() {
-                out[j] = r + 1;
+                out[j] = (r + 1) as u32;
             }
             out[i] = 0;
         });
@@ -47,14 +48,14 @@ pub fn construct_rank_matrix(corr: &Array2<f64>) -> Result<Array2<usize>> {
 }
 
 pub fn get_index_sorted_by_rank(
-    rank_matrix: &Array2<usize>,
+    rank_matrix: &Array2<u32>,
     i: usize,
     index: &[String],
 ) -> Vec<String> {
     let mut rank_vec: Vec<String> = vec!["".to_string(); index.len() - 1];
 
     for j in 0..index.len() {
-        let rank = rank_matrix[[i, j]];
+        let rank = rank_matrix[[i, j]] as usize;
         if rank == 0 {
             continue;
         }
@@ -86,7 +87,7 @@ mod test {
     fn test_construct_rank_matrix_1() {
         let arr2 = array![[1.0, 0.9, 0.3], [0.9, 1.0, 0.5], [0.3, 0.5, 1.0]];
 
-        let rank: Array2<usize> = array![[0, 1, 2], [1, 0, 2], [2, 1, 0]];
+        let rank: Array2<u32> = array![[0, 1, 2], [1, 0, 2], [2, 1, 0]];
 
         assert_eq!(construct_rank_matrix(&arr2).unwrap(), rank);
     }
@@ -101,7 +102,7 @@ mod test {
             [0.1, -0.2, 0.4, 1.0]
         ];
 
-        let rank: Array2<usize> = array![[0, 3, 1, 2], [3, 0, 1, 2], [3, 1, 0, 2], [2, 3, 1, 0]];
+        let rank: Array2<u32> = array![[0, 3, 1, 2], [3, 0, 1, 2], [3, 1, 0, 2], [2, 3, 1, 0]];
 
         assert_eq!(construct_rank_matrix(&arr2).unwrap(), rank);
     }
@@ -117,14 +118,14 @@ mod test {
             [0.2, 0.2, 0.0, 1.0]
         ];
 
-        let rank: Array2<usize> = array![[0, 1, 3, 2], [1, 0, 2, 3], [3, 1, 0, 2], [1, 2, 3, 0]];
+        let rank: Array2<u32> = array![[0, 1, 3, 2], [1, 0, 2, 3], [3, 1, 0, 2], [1, 2, 3, 0]];
 
         assert_eq!(construct_rank_matrix(&arr2).unwrap(), rank);
     }
 
     #[test]
     fn test_get_index_sorted_by_rank_1() {
-        let rank: Array2<usize> = array![[0, 1, 2], [1, 0, 2], [2, 1, 0]];
+        let rank: Array2<u32> = array![[0, 1, 2], [1, 0, 2], [2, 1, 0]];
 
         let index: Vec<String> = ["gene_1", "gene_2", "gene_3"]
             .iter()

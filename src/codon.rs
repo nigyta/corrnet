@@ -62,7 +62,7 @@ fn make_codon_corr(seqs: &[String]) -> Result<Array2<f64>> {
     Ok(codon_arr.mapv(|x| x as f64).pearson_correlation()?)
 }
 
-pub fn make_codon_rank(seqs: &[String]) -> Result<Array2<usize>> {
+pub fn make_codon_rank(seqs: &[String]) -> Result<Array2<u32>> {
     let codon_corr = make_codon_corr(seqs)?;
     rank::construct_rank_matrix(&codon_corr)
 }
