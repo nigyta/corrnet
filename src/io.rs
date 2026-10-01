@@ -162,3 +162,35 @@ impl ByteCsvRecord<'_> {
         self.rank
     }
 }
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use std::io::Write;
+
+    #[test]
+    fn test_read_fasta_plain_and_gz() {
+        let fasta = ">Mp1g00010.1 some description\nATGCCC\nTGA\n>Mp1g00020.1\natgaaa\n";
+        let dir = std::env::temp_dir().join(format!("corrnet-fasta-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+
+        let plain = dir.join("seq.fa");
+        std::fs::write(&plain, fasta).unwrap();
+        let gz = dir.join("seq.fa.gz");
+        let mut enc = flate2::write::GzEncoder::new(
+            std::fs::File::create(&gz).unwrap(),
+            flate2::Compression::default(),
+        );
+        enc.write_all(fasta.as_bytes()).unwrap();
+        enc.finish().unwrap();
+
+        let expected = (
+            vec!["Mp1g00010.1".to_string(), "Mp1g00020.1".to_string()],
+            vec!["ATGCCCTGA".to_string(), "atgaaa".to_string()],
+        );
+        assert_eq!(read_fasta(&plain).unwrap(), expected);
+        assert_eq!(read_fasta(&gz).unwrap(), expected);
+
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+}

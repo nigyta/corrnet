@@ -8,7 +8,7 @@ edition = "2018"
 
 [dependencies]
 structopt = "0.3"
-bio = "*"
+bio = "2"
 ndarray = { version = "0.15.4", features = ["approx", "rayon"] }
 csv = "1.1"
 anyhow = "1"
