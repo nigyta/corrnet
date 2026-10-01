@@ -51,7 +51,7 @@ pub fn read_gene_list<P: AsRef<Path>>(p: &P) -> Result<HashSet<String>> {
     Ok(res)
 }
 
-fn open_with_gz<P: AsRef<Path>>(p: P) -> Result<Box<dyn BufRead>> {
+pub fn open_with_gz<P: AsRef<Path>>(p: P) -> Result<Box<dyn BufRead>> {
     let r = std::fs::File::open(p.as_ref())?;
     let ext = p.as_ref().extension();
 

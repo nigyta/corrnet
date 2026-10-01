@@ -108,7 +108,7 @@ fn format_row(
 }
 
 /// Quote a gene name the same way the csv crate does when needed.
-fn escape_field(field: &str) -> Result<Vec<u8>> {
+pub fn escape_field(field: &str) -> Result<Vec<u8>> {
     let mut wtr = csv::WriterBuilder::new()
         .terminator(csv::Terminator::Any(b'\n'))
         .from_writer(Vec::new());
